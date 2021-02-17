@@ -1,0 +1,27 @@
+{
+  "name": "efs-perf-tester",
+  "version": "1.0.0",
+  "description": "Performance evaluation test harness for the Ephemeral Frame Storage paper",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jueckstock/efs-perf-tester.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jueckstock/efs-perf-tester/issues"
+  },
+  "homepage": "https://github.com/jueckstock/efs-perf-tester#readme",
+  "dependencies": {
+    "am": "^1.1.0",
+    "chrome-launcher": "^0.13.4",
+    "commander": "^7.1.0",
+    "fs-extra": "^9.1.0",
+    "lighthouse": "^7.1.0",
+    "xvfb": "^0.4.0"
+  }
+}
