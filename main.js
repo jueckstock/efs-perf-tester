@@ -70,55 +70,54 @@ const clonedSeedProfile = async (path) => {
 };
 
 
-const runSingleTest = async (url, options) => {
+const runSingleTest = async (url, profileOption, cliOptions) => {
     const clOpts = {
         chromeFlags: [],
+        userDataDir: profileOption,
         logLevel: 'error',
     };
-    if (options.args) {
-        clOpts.chromeFlags.push(...JSON.parse(options.args));
+    if (cliOptions.args) {
+        clOpts.chromeFlags.push(...JSON.parse(cliOptions.args));
     }
-    if (options.binary) {
-        clOpts.chromePath = options.binary;
-    }
-
-    let profile = null;
-    if (options.seed) {
-        profile = await clonedSeedProfile(options.seed);
-        clOpts.userDataDir = profile.path;
+    if (cliOptions.binary) {
+        clOpts.chromePath = cliOptions.binary;
     }
 
     const chrome = await chromeLauncher.launch(clOpts);
     const lhOpts = {
         logLevel: 'info',
-        output: options.format || 'html',
+        output: cliOptions.format || 'html',
         onlyCategories: ['performance'],
         port: chrome.port
     };
     const runnerResult = await lighthouse(url, lhOpts);
-
-    const waiters = [chrome.kill()];
-    if (profile) {
-        waiters.push(profile.cleanup());
-    }
-    await Promise.all(waiters);
-
+    await chrome.kill().catch(err => console.error(err));
     return runnerResult;
 };
 
-const runTestSet = async (url, options) => {
-    let xvfb = null;
-    if (options.xvfb) {
-        xvfb = new AsyncXvfb();
-        await xvfb.start();
-    }
+const runTestSet = async (url, cliOptions) => {
+    const raii = [];
     try {
-        for (let i = 0; i < options.count; ++i) {
-            const runnerResult = await runSingleTest(url, options);
+        let profileOption = true; // default: use a temp/blank profile
+        if (cliOptions.seed) {
+            const profile = await clonedSeedProfile(cliOptions.seed);
+            profileOption = profile.path;
+            raii.push(() => profile.cleanup());
+        }
+
+        let xvfb = null;
+        if (cliOptions.xvfb) {
+            xvfb = new AsyncXvfb();
+            await xvfb.start();
+            raii.push(() => xvfb.stop());
+        }
+
+        for (let i = 0; i < cliOptions.count; ++i) {
+            const runnerResult = await runSingleTest(url, profileOption, cliOptions);
 
             // `.report` is the HTML report as a string
             const reportHtml = runnerResult.report;
-            const reportFilename = path.join(options.directory, `lhreport.${i}.${options.format || 'html'}`);
+            const reportFilename = path.join(cliOptions.directory, `lhreport.${i}.${cliOptions.format || 'html'}`);
             await fs.writeFile(reportFilename, reportHtml).catch(err => console.error(err));
 
             // `.lhr` is the Lighthouse Result as a JS object
@@ -126,7 +125,7 @@ const runTestSet = async (url, options) => {
             console.log(`Performance score was ${runnerResult.lhr.categories.performance.score * 100}`);
         }
     } finally {
-        await xvfb.stop();
+        await Promise.allSettled(raii.map(x => x()));
     }
 };
 
