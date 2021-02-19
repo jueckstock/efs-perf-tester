@@ -6,6 +6,7 @@ const chromeLauncher = require('chrome-launcher');
 const lighthouse = require('lighthouse');
 const Xvfb = require('xvfb');
 const { rm } = require('fs');
+const { BADFLAGS } = require('dns');
 
 
 class AsyncXvfb {
@@ -71,10 +72,15 @@ const clonedSeedProfile = async (path) => {
 
 
 const runSingleTest = async (url, profileOption, cliOptions) => {
+    const blockedDefaultFlags = [
+        '--single-process',
+        '--disable-features=site-per-process',
+    ];
     const clOpts = {
-        chromeFlags: [],
+        chromeFlags: chromeLauncher.Launcher.defaultFlags().filter(a => !blockedDefaultFlags.includes(a)),
         userDataDir: profileOption,
-        logLevel: 'error',
+        logLevel: 'info',
+        ignoreDefaultFlags: true,
     };
     if (cliOptions.args) {
         clOpts.chromeFlags.push(...JSON.parse(cliOptions.args));
@@ -95,6 +101,58 @@ const runSingleTest = async (url, profileOption, cliOptions) => {
     return runnerResult;
 };
 
+
+const lookupJPath = (obj, jpath) => {
+    const segs = jpath.split('.');
+    for (const seg of segs) {
+        if (!(seg in obj)) {
+            throw new Error(`failed to lookup "${jpath}": missing "${seg}"`);
+        }
+        obj = obj[seg];
+    }
+    return obj;
+};
+
+
+// Extract desired elements from a full Lighthouse report JS object
+const cookLighthouseReport = (lhr) => {
+    const globalStatRules = [
+        ['fcp', 'audits.first-contentful-paint.numericValue'],
+        ['lcp', 'audits.largest-contentful-paint.numericValue'],
+        ['tbt', 'audits.total-blocking-time.numericValue'],
+        ['fcidle', 'audits.first-cpu-idle.numericValue'],
+        ['crcmax', 'audits.critical-request-chains.details.longestChain.duration'],
+        ['mwsum', 'audits.mainthread-work-breakdown.numericValue'],
+    ];
+
+    const globalStats = {};
+    for (const [tag, jpath] of globalStatRules) {
+        globalStats[tag] = lookupJPath(lhr, jpath);
+    }
+
+    const mainthreadWorkGroups = ['scriptEvaluation', 'other', 'scriptParseCompile', 'garbageCollection'];
+    const mainthreadWorkItems = lookupJPath(lhr, 'audits.mainthread-work-breakdown.details.items');
+    const mainthreadWorkStats = {};
+    for (const {group, duration} of mainthreadWorkItems) {
+        if (mainthreadWorkGroups.includes(group)) {
+            mainthreadWorkStats[group] = duration;
+        }
+    }
+
+    const bootupItems = lookupJPath(lhr, 'audits.bootup-time.items');
+    return {
+        global: globalStats,
+        mainthreadWork: mainthreadWorkStats,
+        bootup: bootupItems,
+    };
+};
+
+const asyncSleep = (ms) => {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+};
+
 const runTestSet = async (url, cliOptions) => {
     const raii = [];
     try {
@@ -112,18 +170,37 @@ const runTestSet = async (url, cliOptions) => {
             raii.push(() => xvfb.stop());
         }
 
+        const aggStats = [];
+        let timeLeft = 0;
         for (let i = 0; i < cliOptions.count; ++i) {
-            const runnerResult = await runSingleTest(url, profileOption, cliOptions);
+            try {
+                if (timeLeft > 0) {
+                    console.log(`waiting ${timeLeft}ms before next test...`);
+                    await asyncSleep(timeLeft);
+                }
+                const runnerResult = await runSingleTest(url, profileOption, cliOptions);
+                const testEndedAt = Date.now();
 
-            // `.report` is the HTML report as a string
-            const reportHtml = runnerResult.report;
-            const reportFilename = path.join(cliOptions.directory, `lhreport.${i}.${cliOptions.format || 'html'}`);
-            await fs.writeFile(reportFilename, reportHtml).catch(err => console.error(err));
+                // `.lhr` is the Lighthouse Result as a JS object
+                const resultStats = cookLighthouseReport(runnerResult.lhr);
+                resultStats.url = url;
+                resultStats.visit = i + 1;
+                aggStats.push(resultStats);
 
-            // `.lhr` is the Lighthouse Result as a JS object
-            console.log(`Report for ${runnerResult.lhr.finalUrl} saved in ${reportFilename}`);
-            console.log(`Performance score was ${runnerResult.lhr.categories.performance.score * 100}`);
+                // `.report` is the HTML/JSON report as a string
+                const reportHtml = runnerResult.report;
+                const reportFilename = path.join(cliOptions.directory, `lhreport.${i}.${cliOptions.format || 'html'}`);
+                await fs.writeFile(reportFilename, reportHtml).catch(err => console.error(err));
+
+                // compute how much longer we should wait to keep our specified inter-test spacing
+                timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
+            } catch (testErr) {
+                console.error(`Fatal error running test ${i + 1}/${cliOptions.count}:`, testErr);
+            }
         }
+
+        const aggStatFilename = path.join(cliOptions.directory, 'aggstats.json');
+        await fs.writeFile(aggStatFilename, JSON.stringify(aggStats, undefined, 4));
     } finally {
         await Promise.allSettled(raii.map(x => x()));
     }
@@ -140,6 +217,7 @@ am(async () => {
         .option('-f, --format <name>', 'generate Lighthouse tests in <name> format (html, json)', 'html')
         .option('-s, --seed <path>', 'use a temp profile cloned from a seed profile at <path>')
         .option('-x, --xvfb', 'Launch Xvfb automagically')
+        .option('-w, --wait <sec>', 'wait <sec> between test reps to avoid throttling', 1)
         .action(runTestSet);
     await program.parseAsync();
 });
