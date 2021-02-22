@@ -76,7 +76,7 @@ const clonedSeedProfile = async (seedPath) => {
 };
 
 
-const runSingleTest = async (url, profilePath, cliOptions) => {
+const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
     const puppeteerArgs = {
         defaultViewport: null,
         args: [
@@ -116,18 +116,26 @@ const runSingleTest = async (url, profilePath, cliOptions) => {
         onlyCategories: ['performance'],
         port: browserPort,
     };
-    const runnerResult = await lighthouse(url, lhOpts);
-    /*const page = await browser.newPage();
+    //const runnerResult = await lighthouse(url, lhOpts);
+    const page = await browser.newPage();
     await page.tracing.start({
         path: tracePath,
         screenshots: false,
     });
-    page.goto(url, {
+    const response = page.goto(url, {
         waitUntil: 'load',
-
-    })*/
-    await browser.close().catch(err => console.error(err));
-    return runnerResult;
+        // TODO: make nav-timeout a parameter
+    });
+    await Promise.race([
+        response,
+        asyncSleep(60000), // TODO: make me a parameter
+    ]);
+    await page.tracing.stop();
+    await browser.close();
+    return {
+        lhr: [], // dummy Lighthouse report
+        report: "no report dummy!", 
+    };
 };
 
 
@@ -160,7 +168,7 @@ const cookLighthouseReport = (lhr) => {
     }
 
     const mainthreadWorkGroups = ['scriptEvaluation', 'other', 'scriptParseCompile', 'garbageCollection'];
-    const mainthreadWorkItems = lookupJPath(lhr, 'audits.mainthread-work-breakdown.details.items');
+    const mainthreadWorkItems = lookupJPath(lhr, 'audits.mainthread-work-breakdown.details.items', []);
     const mainthreadWorkStats = {};
     for (const {group, duration} of mainthreadWorkItems) {
         if (mainthreadWorkGroups.includes(group)) {
@@ -203,7 +211,8 @@ const runTestSet = async (url, cliOptions) => {
                     console.log(`waiting ${timeLeft}ms before next test...`);
                     await asyncSleep(timeLeft);
                 }
-                const runnerResult = await runSingleTest(url, profile.path, cliOptions);
+                const traceFilename = path.join(cliOptions.directory, `trace.${i}.json`);
+                const runnerResult = await runSingleTest(url, profile.path, traceFilename, cliOptions);
                 const testEndedAt = Date.now();
 
                 // `.lhr` is the Lighthouse Result as a JS object
