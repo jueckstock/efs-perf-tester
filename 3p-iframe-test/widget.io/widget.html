@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+    <body>
+        <script>
+            const hint = window.location.hash;
+            console.log(`${window.origin}:widget.io/widget.html: parent url (${window.location}) has hash "${hint}"`);
+            if (hint == '#slow') {
+                console.log(`${window.origin}:widget.io/widget.html: injecting terribad slow ad`);
+                document.writeln("<script src=\"/wowsers.js\"><" + "/script>");
+            } else {
+                console.log(`${window.origin}:widget.io/widget.html: injecting nice ad`);
+                const script = document.createElement('script');
+                script.async = false;
+                script.src = "/nice.js";
+                document.body.appendChild(script);
+            }
+        </script>
+    </body>
+</html>

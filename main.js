@@ -3,10 +3,10 @@ const path = require('path');
 
 const am = require('am');
 const chromeLauncher = require('chrome-launcher');
+const puppeteer = require('puppeteer-core');
 const lighthouse = require('lighthouse');
 const Xvfb = require('xvfb');
-const { rm } = require('fs');
-const { BADFLAGS } = require('dns');
+const { URL } = require('url');
 
 
 class AsyncXvfb {
@@ -49,12 +49,9 @@ class AsyncXvfb {
     }
 }
 
-const clonedSeedProfile = async (path) => {
+const blankTempProfile = async () => {
     const tmpdir = await fs.mkdtemp("seed");
-    await fs.copy(path, tmpdir, {
-        recursive: true,
-    })
-    const obj = {
+    const profile = {
         cleanup() {
             return fs.rm(tmpdir, {
                 force: true,
@@ -62,51 +59,83 @@ const clonedSeedProfile = async (path) => {
             });
         }
     };
-    Object.defineProperty(obj, 'path', {
+    Object.defineProperty(profile, 'path', {
         value: tmpdir,
         writable: false,
         configurable: false,
     });
-    return obj
+    return profile;
+};
+
+const clonedSeedProfile = async (seedPath) => {
+    const profile = await blankTempProfile();
+    await fs.copy(seedPath, profile.path, {
+        recursive: true,
+    });
+    return profile;
 };
 
 
-const runSingleTest = async (url, profileOption, cliOptions) => {
-    const blockedDefaultFlags = [
-        '--single-process',
-        '--disable-features=site-per-process',
-    ];
-    const clOpts = {
-        chromeFlags: chromeLauncher.Launcher.defaultFlags().filter(a => !blockedDefaultFlags.includes(a)),
-        userDataDir: profileOption,
-        logLevel: 'info',
-        ignoreDefaultFlags: true,
-    };
+const runSingleTest = async (url, profilePath, cliOptions) => {
+    const puppeteerArgs = {
+        defaultViewport: null,
+        args: [
+            '--disable-brave-update',
+            '--user-data-dir=' + profilePath,
+        ],
+        executablePath: cliOptions.binary,
+        ignoreDefaultArgs: [
+            '--disable-sync'
+        ],
+        dumpio: cliOptions.verbose,
+        headless: false
+    }
+    
+    if (cliOptions.verbose) {
+        puppeteerArgs.args.push('--enable-logging=stderr')
+        puppeteerArgs.args.push('--v=0')
+    }
+    
+    if (cliOptions.proxy) {
+        const proxy = new URL(cliOptions.proxy);
+        puppeteerArgs.args.push(`--proxy-server=${proxy.toString()}`)
+        if (proxy.protocol === 'socks5') {
+            puppeteerArgs.args.push(`--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ${proxy.hostname}`)
+        }
+    }
+    
     if (cliOptions.args) {
-        clOpts.chromeFlags.push(...JSON.parse(cliOptions.args));
+        puppeteerArgs.args.push(...JSON.parse(cliOptions.args));
     }
-    if (cliOptions.binary) {
-        clOpts.chromePath = cliOptions.binary;
-    }
-
-    const chrome = await chromeLauncher.launch(clOpts);
+    
+    const browser = await puppeteer.launch(puppeteerArgs);
+    const browserPort = (new URL(browser.wsEndpoint())).port;
     const lhOpts = {
         logLevel: 'info',
         output: cliOptions.format || 'html',
         onlyCategories: ['performance'],
-        port: chrome.port
+        port: browserPort,
     };
     const runnerResult = await lighthouse(url, lhOpts);
-    await chrome.kill().catch(err => console.error(err));
+    /*const page = await browser.newPage();
+    await page.tracing.start({
+        path: tracePath,
+        screenshots: false,
+    });
+    page.goto(url, {
+        waitUntil: 'load',
+
+    })*/
+    await browser.close().catch(err => console.error(err));
     return runnerResult;
 };
 
 
-const lookupJPath = (obj, jpath) => {
+const lookupJPath = (obj, jpath, missingValue) => {
     const segs = jpath.split('.');
     for (const seg of segs) {
         if (!(seg in obj)) {
-            throw new Error(`failed to lookup "${jpath}": missing "${seg}"`);
+            return missingValue;
         }
         obj = obj[seg];
     }
@@ -139,7 +168,7 @@ const cookLighthouseReport = (lhr) => {
         }
     }
 
-    const bootupItems = lookupJPath(lhr, 'audits.bootup-time.items');
+    const bootupItems = lookupJPath(lhr, 'audits.bootup-time.details.items');
     return {
         global: globalStats,
         mainthreadWork: mainthreadWorkStats,
@@ -156,12 +185,8 @@ const asyncSleep = (ms) => {
 const runTestSet = async (url, cliOptions) => {
     const raii = [];
     try {
-        let profileOption = true; // default: use a temp/blank profile
-        if (cliOptions.seed) {
-            const profile = await clonedSeedProfile(cliOptions.seed);
-            profileOption = profile.path;
-            raii.push(() => profile.cleanup());
-        }
+        const profile = (cliOptions.seed) ? await clonedSeedProfile(cliOptions.seed) : await blankTempProfile();
+        raii.push(() => profile.cleanup());
 
         let xvfb = null;
         if (cliOptions.xvfb) {
@@ -178,7 +203,7 @@ const runTestSet = async (url, cliOptions) => {
                     console.log(`waiting ${timeLeft}ms before next test...`);
                     await asyncSleep(timeLeft);
                 }
-                const runnerResult = await runSingleTest(url, profileOption, cliOptions);
+                const runnerResult = await runSingleTest(url, profile.path, cliOptions);
                 const testEndedAt = Date.now();
 
                 // `.lhr` is the Lighthouse Result as a JS object
@@ -218,6 +243,8 @@ am(async () => {
         .option('-s, --seed <path>', 'use a temp profile cloned from a seed profile at <path>')
         .option('-x, --xvfb', 'Launch Xvfb automagically')
         .option('-w, --wait <sec>', 'wait <sec> between test reps to avoid throttling', 1)
+        .option('-v, --verbose', 'turn on verbose stderr logging from Chromium')
+        .option('-p, --proxy <url>', 'use <url> as an HTTP/SOCKS proxy server')
         .action(runTestSet);
     await program.parseAsync();
 });
