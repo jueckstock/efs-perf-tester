@@ -117,6 +117,7 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
         args: [
             '--disable-brave-update',
             '--user-data-dir=' + profilePath,
+            //'--enable-blink-features=BlinkRuntimeCallStats',
         ],
         executablePath: cliOptions.binary,
         ignoreDefaultArgs: [
@@ -153,7 +154,7 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
             categories: [
                 'devtools.timeline', // for all page-load/request metrics records
                 'disabled-by-default-devtools.timeline', // for useful "FrameCommittedInBrowser" control record (and a ton of other junk...)
-                'disabled-by-default-v8.runtime_stats', 
+                'v8', 'disabled-by-default-v8.runtime_stats', // contains all the "v8 slices" used by chrome://tracing to build the comprehensive V8 profiling numbers
             ],
         });
         const loadedResponse = page.goto(url, {
@@ -166,7 +167,7 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
             loadedResponse,
             waitingForLoaded,
         ]);
-        await page.tracing.stop();
+        await page.tracing.stop();  // TODO: JSON.parse this? do the high-level stats?
     } finally {
         await browser.close();
     }
