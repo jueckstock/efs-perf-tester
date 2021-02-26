@@ -2,11 +2,11 @@ const fs = require('fs-extra');
 const path = require('path');
 
 const am = require('am');
-const chromeLauncher = require('chrome-launcher');
 const puppeteer = require('puppeteer-core');
-const lighthouse = require('lighthouse');
 const Xvfb = require('xvfb');
 const { URL } = require('url');
+
+const { extractTraceStats } = require('./lib/events');
 
 
 class AsyncXvfb {
@@ -111,6 +111,7 @@ const pageMonitor = (page) => {
     });
 };
 
+
 const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
     const puppeteerArgs = {
         defaultViewport: null,
@@ -154,6 +155,7 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
             categories: [
                 'devtools.timeline', // for all page-load/request metrics records
                 'disabled-by-default-devtools.timeline', // for useful "FrameCommittedInBrowser" control record (and a ton of other junk...)
+                'blink.user_timing', // for domInteractive
                 'v8', 'disabled-by-default-v8.runtime_stats', // contains all the "v8 slices" used by chrome://tracing to build the comprehensive V8 profiling numbers
             ],
         });
@@ -167,7 +169,8 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
             loadedResponse,
             waitingForLoaded,
         ]);
-        await page.tracing.stop();  // TODO: JSON.parse this? do the high-level stats?
+        const traceBuffer = await page.tracing.stop();
+        return extractTraceStats(traceBuffer);
     } finally {
         await browser.close();
     }

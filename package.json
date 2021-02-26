@@ -18,10 +18,8 @@
   "homepage": "https://github.com/jueckstock/efs-perf-tester#readme",
   "dependencies": {
     "am": "^1.1.0",
-    "chrome-launcher": "^0.13.4",
     "commander": "^7.1.0",
     "fs-extra": "^9.1.0",
-    "lighthouse": "^7.1.0",
     "puppeteer-core": "^7.1.0",
     "xvfb": "^0.4.0"
   }
