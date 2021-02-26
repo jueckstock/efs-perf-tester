@@ -6,7 +6,7 @@ const puppeteer = require('puppeteer-core');
 const Xvfb = require('xvfb');
 const { URL } = require('url');
 
-const { extractTraceStats } = require('./lib/events');
+const { extractTraceStats, ratioTraceStats } = require('./lib/events');
 
 
 class AsyncXvfb {
@@ -105,52 +105,39 @@ const launchWithRetry = async (puppeteerArgs, retries, computeTimeout) => {
 }
 
 const pageMonitor = (page) => {
-    return new Promise((resolve, reject) => {
-        page.on('close', resolve);
-        page.on('error', reject);
+    let monitor;
+    const statusHack = (status) => {
+        monitor._status = status;
+    }
+    monitor = new Promise((resolve, reject) => {
+        page.on('close', () => {
+            statusHack('close');
+            resolve();
+        });
+        page.on('error', (err) => {
+            statusHack('close');
+            reject(err);
+        });
     });
+    statusHack('open');
+    Object.defineProperty(monitor, 'status', {
+        enumerable: false,
+        configurable: false,
+        get() {
+            return monitor._status;
+        }
+    })
+    return monitor;
 };
 
-
-const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
-    const puppeteerArgs = {
-        defaultViewport: null,
-        args: [
-            '--disable-brave-update',
-            '--user-data-dir=' + profilePath,
-            //'--enable-blink-features=BlinkRuntimeCallStats',
-        ],
-        executablePath: cliOptions.binary,
-        ignoreDefaultArgs: [
-            '--disable-sync'
-        ],
-        dumpio: cliOptions.verbose,
-        headless: false
-    }
-    
-    if (cliOptions.verbose) {
-        puppeteerArgs.args.push('--enable-logging=stderr')
-        puppeteerArgs.args.push('--v=0')
-    }
-    
-    if (cliOptions.proxy) {
-        const proxy = new URL(cliOptions.proxy);
-        puppeteerArgs.args.push(`--proxy-server=${proxy.toString()}`)
-        if (proxy.protocol === 'socks5') {
-            puppeteerArgs.args.push(`--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ${proxy.hostname}`)
-        }
-    }
-    
-    if (cliOptions.args) {
-        puppeteerArgs.args.push(...JSON.parse(cliOptions.args));
-    }
-    
-    const browser = await launchWithRetry(puppeteerArgs);
+const openTabAndMeasure = async (browser, url, tabTag, cliOptions) => {
+    console.log(`PAGE[${url}::${tabTag}] starting...`);
+    const page = await browser.newPage();
+    const pageCrashedOrClosed = pageMonitor(page);
     try {
-        const page = await browser.newPage();
-        const pageCrashedOrClosed = pageMonitor(page);
+        const traceFilename = path.join(cliOptions.directory, `trace.${tabTag}.json`);
         await page.tracing.start({
-            path: tracePath,
+            path: traceFilename,
             screenshots: false,
             categories: [
                 'devtools.timeline', // for all page-load/request metrics records
@@ -172,23 +159,74 @@ const runSingleTest = async (url, profilePath, tracePath, cliOptions) => {
         const traceBuffer = await page.tracing.stop();
         return extractTraceStats(traceBuffer);
     } finally {
-        await browser.close();
+        console.log(`PAGE[${url}::${tabTag}] ending (${pageCrashedOrClosed.status})`);
+        if (pageCrashedOrClosed.status == 'open') {
+            await page.close();
+        }
+    }
+}
+
+const runColdHotCycle = async (url, cycleTag, cliOptions) => {
+    const profile = (cliOptions.seed) ? await clonedSeedProfile(cliOptions.seed) : await blankTempProfile();
+    try {
+        const puppeteerArgs = {
+            defaultViewport: null,
+            args: [
+                '--disable-brave-update',
+                '--user-data-dir=' + profile.path,
+                //'--enable-blink-features=BlinkRuntimeCallStats',
+            ],
+            executablePath: cliOptions.binary,
+            ignoreDefaultArgs: [
+                '--disable-sync'
+            ],
+            dumpio: cliOptions.verbose,
+            headless: false
+        }
+        
+        if (cliOptions.verbose) {
+            puppeteerArgs.args.push('--enable-logging=stderr')
+            puppeteerArgs.args.push('--v=0')
+        }
+        
+        if (cliOptions.proxy) {
+            const proxy = new URL(cliOptions.proxy);
+            puppeteerArgs.args.push(`--proxy-server=${proxy.toString()}`)
+            if (proxy.protocol === 'socks5') {
+                puppeteerArgs.args.push(`--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE ${proxy.hostname}`)
+            }
+        }
+        
+        if (cliOptions.args) {
+            puppeteerArgs.args.push(...JSON.parse(cliOptions.args));
+        }
+        
+        const browser = await launchWithRetry(puppeteerArgs);
+        try {
+
+            coldStats = await openTabAndMeasure(browser, url, `${cycleTag}.cold`, cliOptions);
+            await asyncSleep(cliOptions.wait * 1000);
+            hotStats = await openTabAndMeasure(browser, url, `${cycleTag}.hot`, cliOptions);
+            return {
+                cold: coldStats,
+                hot: hotStats,
+                ratio: ratioTraceStats(coldStats, hotStats),
+            };
+        } finally {
+            await browser.close();
+        }
+    } finally {
+        profile.cleanup();
     }
 };
 
 const runTestSet = async (url, cliOptions) => {
-    const raii = [];
+    let xvfb = null;
+    if (cliOptions.xvfb) {
+        xvfb = new AsyncXvfb();
+        await xvfb.start();
+    }
     try {
-        const profile = (cliOptions.seed) ? await clonedSeedProfile(cliOptions.seed) : await blankTempProfile();
-        raii.push(() => profile.cleanup());
-
-        let xvfb = null;
-        if (cliOptions.xvfb) {
-            xvfb = new AsyncXvfb();
-            await xvfb.start();
-            raii.push(() => xvfb.stop());
-        }
-
         let timeLeft = 0;
         for (let i = 0; i < cliOptions.count; ++i) {
             try {
@@ -196,9 +234,12 @@ const runTestSet = async (url, cliOptions) => {
                     console.log(`waiting ${timeLeft}ms before next test...`);
                     await asyncSleep(timeLeft);
                 }
-                const traceFilename = path.join(cliOptions.directory, `trace.${i}.json`);
-                await runSingleTest(url, profile.path, traceFilename, cliOptions);
+                const cycleStats = await runColdHotCycle(url, i, cliOptions);
                 const testEndedAt = Date.now();
+
+                // stash our cycle stats
+                const statsFilename = path.join(cliOptions.directory, `stats.${i}.json`);
+                await fs.writeFile(statsFilename, JSON.stringify(cycleStats));
 
                 // compute how much longer we should wait to keep our specified inter-test spacing
                 timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
@@ -208,7 +249,9 @@ const runTestSet = async (url, cliOptions) => {
         }
 
     } finally {
-        await Promise.allSettled(raii.map(x => x()));
+        if (xvfb) {
+            await xvfb.stop();
+        }
     }
 };
 
