@@ -72,7 +72,7 @@ const eventProcessorRules = [{
             const pidOriginMap = (extra.pidOriginMap = extra.pidOriginMap || {});
             const executionContext = pidOriginMap[event.pid];
             if (!executionContext) {
-                console.log(`STATS[v8]: unable to lookup execution context origin for pid=${event.pid}?!`);
+                console.warn(`STATS[v8]: unable to lookup execution context origin for pid=${event.pid}?!`);
                 return;
             }
             const executionOrigin = executionContext.url.origin;
@@ -137,7 +137,7 @@ const eventProcessorRules = [{
             stats.req[origin].bytes += encodedDataLength;
             delete extra.reqOriginMap[requestId];
         } else {
-            throw new Error(`unknown requestId ${requestId}: no origin context??`);
+            console.warn(`STATS[req]: unable to lookup context origin for requestId=${requestId}?!`);
         }
     }
 }];
@@ -146,10 +146,10 @@ const eventProcessorRules = [{
 const extractTraceStats = (buffer) => {
     const events = JSON.parse(buffer).traceEvents;
     
-    console.log(`EXTRACT: sorting ${events.length} event records by .ts (timestamp)...`);
+    //console.log(`EXTRACT: sorting ${events.length} event records by .ts (timestamp)...`);
     events.sort((a, b) => a.ts - b.ts);
 
-    console.log(`EXTRACT: processing ${events.length} event records...`);
+    //console.log(`EXTRACT: processing ${events.length} event records...`);
     const stats = Object.create(null);
     const extra = Object.create(null);
     for (const event of events) {
