@@ -1,4 +1,7 @@
 'use strict';
+const os = require('os');
+const path = require('path');
+
 const fs = require('fs-extra');
 const puppeteer = require('puppeteer-core');
 const Xvfb = require('xvfb');
@@ -44,7 +47,7 @@ class AsyncXvfb {
 }
 
 const blankTempProfile = async () => {
-    const tmpdir = await fs.mkdtemp("seed");
+    const tmpdir = await fs.mkdtemp(path.join(os.tmpdir(), "temp-profile-"));
     const profile = {
         cleanup() {
             return fs.rm(tmpdir, {
