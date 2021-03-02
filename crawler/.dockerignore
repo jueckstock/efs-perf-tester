@@ -1,0 +1,11 @@
+.dockerignore
+.env
+.gitattributes
+.gitignore
+Dockerfile
+GO.sh
+LICENSE
+main.js
+Makefile
+node_modules
+statsify.js
