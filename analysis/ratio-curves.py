@@ -6,32 +6,26 @@ from matplotlib import pyplot as plt
 
 def main(argv):
     try:
-        stem_a = argv[1]
-        stem_b = argv[2]
-    except IndexError:
+        stems = argv[1:]
+        assert stems != []
+    except AssertionError:
         print(f"usage: {argv[0]} STATS_STEM_A STATS_STEM_B")
         return
-    out_stem = f"OUT-{stem_a}-{stem_b}"
-    
-    def csv_a(tag):
-        return f"{stem_a}-{tag}.csv"
-
-    def csv_b(tag):
-        return f"{stem_b}-{tag}.csv"
+    out_stem = f"OUT-{'-'.join(stems)}"
     
     # PLOT LOADING TIMES COMPARISON CURVES
     #-------------------------------------
 
-    ldf1 = pd.read_csv(csv_a('loading'), index_col=0)
-    ldf2 = pd.read_csv(csv_b('loading'), index_col=0)
+    ldfs = [pd.read_csv(f"{s}-loading.csv", index_col=0) / 1_000_000 for s in stems]
 
-    col_pairs = list(zip(ldf1.columns, ldf2.columns))
-    assert all(a == b for a, b in col_pairs), "mismatched columns!"
+    #col_pairs = list(zip(ldf1.columns, ldf2.columns))
+    #assert all(a == b for a, b in col_pairs), "mismatched columns!"
 
-    fig, axen = plt.subplots(len(col_pairs), 1, figsize=(6, 4 * len(col_pairs)), sharex=True)
-    for i, (a, _) in enumerate(col_pairs):
-        tdf = pd.DataFrame({stem_a: ldf1[a], stem_b: ldf2[a]})
-        tdf.plot.density(ax=axen[i], title=a, xlim=(0.5, 2.0))
+    cols = ldfs[0].columns
+    fig, axen = plt.subplots(len(cols), 1, figsize=(6, 4 * len(cols)), sharex=True)
+    for i, c in enumerate(cols):
+        tdf = pd.DataFrame({s: ldf[c] for s, ldf in zip(stems, ldfs)})
+        tdf.plot.density(ax=axen[i], title=c)
 
     #fig, axen = plt.subplots(1, 2, sharey=True)
     #ldf1.plot.density(ax=axen[0], title=stem_a)

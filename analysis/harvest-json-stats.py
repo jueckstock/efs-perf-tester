@@ -22,7 +22,7 @@ def main(argv):
         with open(stats_sile, 'rb') as fd:
             raw_stats = json.load(fd)
         
-        ratio_stats = raw_stats['ratio']
+        ratio_stats = raw_stats['diff']
         loading_stats.append(ratio_stats['loading'])
         for key, stats in ratio_stats['v8'].items():
             v8_stats.append(dict(origin=key, **stats))
