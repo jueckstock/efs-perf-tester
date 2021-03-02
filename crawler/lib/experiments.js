@@ -1,4 +1,5 @@
 'use strict';
+const path = require('path');
 const { URL } = require('url');
 
 const crawling = require('./crawling');
@@ -83,7 +84,7 @@ const runColdHotCycle = async (url, cycleTag, cliOptions) => {
             return {
                 cold: coldStats,
                 hot: hotStats,
-                ratio: events.ratioTraceStats(coldStats, hotStats),
+                diff: events.diffTraceStats(coldStats, hotStats),
             };
         } finally {
             await browser.close();

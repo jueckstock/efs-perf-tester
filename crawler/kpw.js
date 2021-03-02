@@ -7,13 +7,14 @@ const fs = require('fs-extra');
 const os = require('os');
 const path = require('path');
 
-const crawling = require('./crawling');
+const crawling = require('./lib/crawling');
 const { runColdHotCycle } = require('./lib/experiments');
 const { MongoConnector } = require('./lib/mongo');
 const { addCommonOptions } = require('./lib/ui');
 
-const VANILLA_PROFILE_SEED = process.env.VANILLA_PROFILE_SEED || '/work/data/vanilla';
-const BLOCK3P_PROFILE_SEED = process.env.BLOCK3P_PROFILE_SEED || '/work/data/block3p';
+const BROWSER_BINARY_PATH = process.env.BROWSER_BINARY_PATH;
+const VANILLA_PROFILE_SEED = process.env.VANILLA_PROFILE_SEED;
+const BLOCK3P_PROFILE_SEED = process.env.BLOCK3P_PROFILE_SEED;
 const POLICY_MAP = {
     'vanilla': {
         seed: VANILLA_PROFILE_SEED,
@@ -37,13 +38,18 @@ const POLICY_MAP = {
 const runTestSet = async (url, policy, cliOptions) => {
     const asyncCleanups = [];
     try {
-        if (cliOptions.xvfb) {
+        // invert the selection logic viz. the CLI tool for Xvfb (default: false -> USE Xvfb; true -> NO Xvfb)
+        if (!cliOptions.xvfb) {
             const xvfb = new crawling.AsyncXvfb();
             await xvfb.start();
             asyncCleanups.push(() => xvfb.stop());
         }
 
-        const mongoConn = new MongoConnector();
+        // use the environment configuration for the browser executable if it's not specified in the launch CLI args
+        cliOptions.binary = cliOptions.binary || BROWSER_BINARY_PATH;
+
+        // establish DB connection and record this experiment's beginning
+        const mongoConn = await MongoConnector.new(cliOptions.mongoUrl);
         asyncCleanups.push(() => mongoConn.close());
         const visitLogger = await mongoConn.getVisitLogger({
             url,
@@ -51,7 +57,8 @@ const runTestSet = async (url, policy, cliOptions) => {
             options: cliOptions,
         });
 
-        cliOptions.directory = await fs.mkdtemp(path.join(os.tmpdir()), 'traces-');
+        // save raw traces to a temp directory (cleaned out at end of run; all we save here are the baked stats)
+        cliOptions.directory = await fs.mkdtemp(path.join(os.tmpdir(), 'traces-'));
         asyncCleanups.push(() => fs.rm(cliOptions.directory, { force: true, recursive: true}));
 
         let timeLeft = 0;
@@ -63,13 +70,16 @@ const runTestSet = async (url, policy, cliOptions) => {
                 const cycleStats = await runColdHotCycle(url, i, cliOptions);
                 const testEndedAt = Date.now();
 
-                // stash our cycle stats in Mongo
-                await visitLogger.visitComplete(i, cycleStats);
+                // stash our baked cycle stats in Mongo
+                console.error(`DONE: visit(url=${url}, policy=${policy}, cycle=${i})`);
+                await visitLogger.visitComplete(`t${i}`, cycleStats);
+
 
                 // compute how much longer we should wait to keep our specified inter-test spacing
                 timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
             } catch (err) {
-                await visitLogger.visitFailed(i, err.toString());
+                console.error(`ERROR: visit(url=${url}, policy=${policy}, cycle=${i})`, err);
+                await visitLogger.visitFailed(`t${i}`, err.toString());
             }
         }
     } finally {
@@ -79,7 +89,7 @@ const runTestSet = async (url, policy, cliOptions) => {
     }
 };
 
-const serveKpw = async (cliOptions) => {
+const serveKpw = async (port, cliOptions) => {
     const app = express();
     
     // Set up basic router to use JSON-body-parsing middleware and support health checks
@@ -90,7 +100,7 @@ const serveKpw = async (cliOptions) => {
     });
 
     // Handle request-to-perform-experiment (using KPW job dispatching)
-    routes.post('/kpw/:endpoint', async (req, res) => {
+    routes.post('/kpw/efs-perf-test', async (req, res) => {
         try {
             // Unpack arguments from JSON POST body
             const {
@@ -117,14 +127,15 @@ const serveKpw = async (cliOptions) => {
         }
     });
 
-    app.use(routes).listen(PORT, () => {
-        console.log(`Listening for KPW dispatches on port ${PORT}`);
+    app.use(routes).listen(port, () => {
+        console.log(`Listening for KPW dispatches on port ${port}`);
     });
 }
 
 am(async () => {
     const  { program } = require('commander');
     addCommonOptions(program.arguments('<port>'))
+        .option('-m, --mongoUrl <url>', 'connect to <url> for Mongo access instead of ENV/default')
         .action(serveKpw);
     await program.parseAsync();
 });

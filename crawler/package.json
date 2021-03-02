@@ -19,6 +19,7 @@
   "dependencies": {
     "am": "^1.1.0",
     "commander": "^7.1.0",
+    "dotenv": "^8.2.0",
     "express": "^4.17.1",
     "fs-extra": "^9.1.0",
     "mongodb": "^3.6.4",

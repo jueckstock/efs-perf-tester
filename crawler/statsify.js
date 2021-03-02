@@ -36,7 +36,7 @@ am(async (...traceDirs) => {
                 await fs.writeJSON(statsFile, {
                     cold: coldStats,
                     hot: hotStats,
-                    ratio: events.ratioTraceStats(coldStats, hotStats),
+                    diff: events.diffTraceStats(coldStats, hotStats),
                 });
                 console.log(statsFile);
             } else {

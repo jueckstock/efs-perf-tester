@@ -18,7 +18,7 @@ const matchCatAny = (/** @type {String[]} */...matchCategories) => {
 }
 
 const eventProcessorRules = [{
-    matches: matchName('domContentLoadedEventStart', 'domInteractive', 'loadEventStart', 'firstPaint', 'firstContentfulPaint'), 
+    matches: matchName('domContentLoadedEventEnd', 'domInteractive', 'loadEventEnd', 'firstPaint', 'firstContentfulPaint'), 
     process: (event, stats) => {
         const { name, ts } = event;
         stats.loading = stats.loading || {};
@@ -146,14 +146,22 @@ const eventProcessorRules = [{
 const extractTraceStats = (buffer) => {
     const events = JSON.parse(buffer).traceEvents;
     
-    //console.log(`EXTRACT: sorting ${events.length} event records by .ts (timestamp)...`);
+    // sort by timestamp and find epoch (earliest non-0 timestamp; LINUX_CLOCK_MONOTONIC--microsecond ticks from boot time)
     events.sort((a, b) => a.ts - b.ts);
+    let epoch;
+    for (const event of events) {
+        if (event.ts !== 0) {
+            epoch = event.ts;
+            break;
+        }
+    }
 
     //console.log(`EXTRACT: processing ${events.length} event records...`);
     const stats = Object.create(null);
     const extra = Object.create(null);
     for (const event of events) {
-        event.cat = event.cat.split(',');
+        event.cat = event.cat.split(','); // parse category tokens into an array for filtering/matching
+        event.ts -= epoch; // adjust timestamps to be trace-relative (not boot/system-relative)
         for (const { matches, process } of eventProcessorRules) {
             if (matches(event)) {
                 process(event, stats, extra);
@@ -164,7 +172,11 @@ const extractTraceStats = (buffer) => {
     return stats;
 }
 
-const ratioTraceStats = (coldStats, hotStats) => {
+const diffTraceStats = (coldStats, hotStats, delta) => {
+    // default delta function: simple diff (cold - hot)
+    delta = delta || ((cold, hot) => cold - hot);
+
+    // recursive parallel-object walker (compute deltas only on parallel/matched elements)
     const objWalker = (cold, hot, ratio) => {
         for (const key in cold) {
             if (Object.prototype.hasOwnProperty.call(cold, key) && Object.prototype.hasOwnProperty.call(hot, key)) {
@@ -172,8 +184,8 @@ const ratioTraceStats = (coldStats, hotStats) => {
                 const hval = hot[key];
                 if (typeof cval === typeof hval) {
                     if (typeof cval === 'number') {
-                        /* found parallel stat entry; compute hot/cold ratio */
-                        ratio[key] = hval / cval;
+                        /* found parallel stat entry; compute delta */
+                        ratio[key] = delta(cval, hval);
                     } else if (typeof cval === 'object') {
                         /* recurse */
                         objWalker(cval, hval, ratio[key] = Object.create(null));
@@ -188,5 +200,5 @@ const ratioTraceStats = (coldStats, hotStats) => {
 
 module.exports = {
     extractTraceStats,
-    ratioTraceStats,
+    diffTraceStats,
 };

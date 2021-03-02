@@ -5,27 +5,32 @@ const { MongoClient } = require("mongodb");
 const MONGODB_URL = process.env.MONGODB_URL;
 
 class MongoConnector {
-    constructor(url) {
-        this._url = url || MONGODB_URL;
-        this._conn = null;
-        this._visits = null;
-    }
-
-    async connect() {
-        this._conn = await MongoClient.connect(self._url, {
-            useUnifiedTopology: true,
-            useNewUrlParser: true,
-        })
-
+    constructor(conn) {
+        this._conn = conn;
         this._visits = this._conn.db().collection("visits");
     }
 
+    static async new(url) {
+        url = url || MONGODB_URL;
+        const conn = await MongoClient.connect(url, {
+            useUnifiedTopology: true,
+            useNewUrlParser: true,
+        });
+        return new MongoConnector(conn);
+    }
+
     async close() {
-        await this._conn.close().catch(err => console.error(err));
+        if (this._conn) {
+            await this._conn.close().catch(err => console.error(err));
+        }
     }
 
     async getVisitLogger(meta) {
-        return await VisitLogger.new(this._visits, meta);
+        if (this._visits) {
+            return await VisitLogger.new(this._visits, meta);
+        } else {
+            throw new Error('no connection?!');
+        }
     }
 }
 
@@ -38,13 +43,14 @@ class VisitLogger {
     static async new(col, meta) {
         const doc = Object.create(null);
         Object.assign(doc, meta);
+        doc.visits = {};
 
-        const { id } = await col.insertOne(doc);
-        return new VisitLogger(col, id);
+        const { insertedId } = await col.insertOne(doc);
+        return new VisitLogger(col, insertedId);
     }
 
     async visitComplete(tag, stats) {
-        await self._col.updateOne({_id: self._id}, {
+        await this._col.updateOne({_id: this._id}, {
             $set: {
                 [`visits.${tag}`]: {
                     stats: stats,
@@ -55,7 +61,7 @@ class VisitLogger {
     }
 
     async visitFailed(tag, err) {
-        await self._col.updateOne({_id: self._id}, {
+        await this._col.updateOne({_id: this._id}, {
             $set: {
                 [`visits.${tag}`]: {
                     err: err,
