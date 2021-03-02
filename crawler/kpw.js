@@ -9,6 +9,7 @@ const path = require('path');
 
 const crawling = require('./crawling');
 const { runColdHotCycle } = require('./lib/experiments');
+const { MongoConnector } = require('./lib/mongo');
 const { addCommonOptions } = require('./lib/ui');
 
 const VANILLA_PROFILE_SEED = process.env.VANILLA_PROFILE_SEED || '/work/data/vanilla';
@@ -33,7 +34,7 @@ const POLICY_MAP = {
 };
 
 
-const runTestSet = async (url, cliOptions) => {
+const runTestSet = async (url, policy, cliOptions) => {
     const asyncCleanups = [];
     try {
         if (cliOptions.xvfb) {
@@ -42,22 +43,34 @@ const runTestSet = async (url, cliOptions) => {
             asyncCleanups.push(() => xvfb.stop());
         }
 
+        const mongoConn = new MongoConnector();
+        asyncCleanups.push(() => mongoConn.close());
+        const visitLogger = await mongoConn.getVisitLogger({
+            url,
+            policy,
+            options: cliOptions,
+        });
+
         cliOptions.directory = await fs.mkdtemp(path.join(os.tmpdir()), 'traces-');
         asyncCleanups.push(() => fs.rm(cliOptions.directory, { force: true, recursive: true}));
 
         let timeLeft = 0;
         for (let i = 0; i < cliOptions.count; ++i) {
-            if (timeLeft > 0) {
-                await crawling.asyncSleep(timeLeft);
+            try {
+                if (timeLeft > 0) {
+                    await crawling.asyncSleep(timeLeft);
+                }
+                const cycleStats = await runColdHotCycle(url, i, cliOptions);
+                const testEndedAt = Date.now();
+
+                // stash our cycle stats in Mongo
+                await visitLogger.visitComplete(i, cycleStats);
+
+                // compute how much longer we should wait to keep our specified inter-test spacing
+                timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
+            } catch (err) {
+                await visitLogger.visitFailed(i, err.toString());
             }
-            const cycleStats = await runColdHotCycle(url, i, cliOptions);
-            const testEndedAt = Date.now();
-
-            // stash our cycle stats in Mongo
-            console.log('TODO STASH ME IN MONGO');
-
-            // compute how much longer we should wait to keep our specified inter-test spacing
-            timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
         }
     } finally {
         await Promise.allSettled(asyncCleanups.map(thunk => thunk())).catch((err) => {
@@ -94,7 +107,7 @@ const serveKpw = async (cliOptions) => {
             tmpOptions.seed = seed;
 
             // Run the test set!
-            await runTestSet(url, tmpOptions);
+            await runTestSet(url, policy, tmpOptions);
 
             // Return success to KPW
             res.status(200).send('OK').end();
