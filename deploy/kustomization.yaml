@@ -10,10 +10,10 @@ namePrefix: "efs-"
 images:
   - name: "efs-perf-crawler"
     newName: "192.168.42.206:5000/efs-perf-crawler"
-    newTag: "latest"
+    newTag: "5a2d"
   - name: "kpw-consumer-sidecar"
     newName: "192.168.42.206:5000/kpw-consumer"
-    newTag: "latest"
+    newTag: "4065"
   - name: "redis-server"
     newName: "redis" # Docker hub official/library image
     newTag: "latest"
