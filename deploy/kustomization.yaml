@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta
+kind: Kustomization
+resources:
+  - "crawlers.yaml"
+  - "redis.yaml"
+commonLabels:
+  project: "efs-cookie-privacy"
+  owner: "jjuecks"
+namePrefix: "efs-"
+images:
+  - name: "efs-perf-crawler"
+    newName: "192.168.42.206:5000/efs-perf-crawler"
+    newTag: "latest"
+  - name: "kpw-consumer-sidecar"
+    newName: "192.168.42.206:5000/kpw-consumer"
+    newTag: "latest"
+  - name: "redis-server"
+    newName: "redis" # Docker hub official/library image
+    newTag: "latest"
+configMapGenerator:
+  - name: "crawler-public-env"
+    env: "public.env"
+secretGenerator:
+  - name: "crawler-secret-env"

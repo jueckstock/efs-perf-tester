@@ -1,0 +1,41 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "redis-deployment"
+  labels:
+    app: "redis-pod"
+spec:
+  selector:
+    app: "redis-pod"
+  template:
+    spec:
+      containers:
+        - name: "redis"
+          image: "redis-server"
+          ports:
+            - containerPort: 6379
+              name: "redis"
+          resources:
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "redis-service"
+  labels:
+    app: "redis-svc"
+spec:
+  selector:
+    app: "redis-svc"
+  ports:
+    - name: "redis"
+      port: 6379
+      protocol: TCP
+      targetPort: "redis"
+  type: ClusterIP

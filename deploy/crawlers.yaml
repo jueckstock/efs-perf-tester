@@ -1,0 +1,41 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "crawler-deployment"
+  labels:
+    app: "crawler"
+spec:
+  replicas: 1
+  selector:
+    app: "crawler"
+  template:
+    spec:
+      containers:
+        - name: "crawler"
+          image: "efs-perf-crawler"
+          envFrom:
+            - configMapRef:
+                name: "crawler-public-env"
+            - secretRef:
+                name: "crawler-secret-env"
+          resources:
+            limits:
+              cpu: "4"
+              memory: "4Gi"
+            requests:
+              cpu: "2"
+              memory: "2Gi"
+        - name: "kpw"
+          image: "kpw-consumer-sidecar"
+          envFrom:
+            - name: "crawler-public-env"
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+
+
