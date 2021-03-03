@@ -43,6 +43,7 @@ class VisitLogger {
     static async new(col, meta) {
         const doc = Object.create(null);
         Object.assign(doc, meta);
+	doc.counters = { complete: 0, failed: 0 };
         doc.visits = {};
 
         const { insertedId } = await col.insertOne(doc);
@@ -56,7 +57,8 @@ class VisitLogger {
                     stats: stats,
                     when: new Date(),
                 }
-            }
+            },
+	    $inc: { 'counters.complete': 1 },
         });
     }
 
@@ -67,7 +69,8 @@ class VisitLogger {
                     err: err,
                     when: new Date(),
                 }
-            }
+            },
+	    $inc: { 'counters.failed': 1 },
         });
     }
 }
