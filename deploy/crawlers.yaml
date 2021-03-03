@@ -26,10 +26,10 @@ spec:
           resources:
             limits:
               cpu: "4"
-              memory: "4Gi"
+              memory: "8Gi"
             requests:
               cpu: "2"
-              memory: "2Gi"
+              memory: "4Gi"
         - name: "kpw"
           image: "kpw-consumer-sidecar"
           envFrom:
@@ -41,5 +41,14 @@ spec:
             requests:
               cpu: "500m"
               memory: "256Mi"
+      volumes:
+        - name: local-dev-shm
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1Gi"
+        - name: local-tmp
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1Gi"
 
 
