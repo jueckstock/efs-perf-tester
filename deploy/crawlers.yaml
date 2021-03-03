@@ -3,13 +3,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: "crawler-deployment"
-  labels:
-    app: "crawler"
 spec:
   replicas: 1
   selector:
-    app: "crawler"
+    matchLabels:
+      app: "crawler"
   template:
+    metadata:
+      labels:
+        app: "crawler"
     spec:
       containers:
         - name: "crawler"

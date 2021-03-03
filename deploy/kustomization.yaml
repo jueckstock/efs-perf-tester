@@ -1,4 +1,4 @@
-apiVersion: kustomize.config.k8s.io/v1beta
+apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - "crawlers.yaml"
@@ -22,3 +22,4 @@ configMapGenerator:
     env: "public.env"
 secretGenerator:
   - name: "crawler-secret-env"
+    env: "secret.env"
