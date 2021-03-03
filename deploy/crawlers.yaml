@@ -21,6 +21,8 @@ spec:
                 name: "crawler-public-env"
             - secretRef:
                 name: "crawler-secret-env"
+          securityContext:
+            privileged: true
           resources:
             limits:
               cpu: "4"
