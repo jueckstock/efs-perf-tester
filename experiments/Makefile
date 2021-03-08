@@ -1,9 +1,13 @@
 LOADING_POOL = loading_pool.csv
+V8_POOL = v8_pool.csv
 
-all : $(LOADING_POOL)
+all : $(LOADING_POOL) $(V8_POOL)
 
 $(LOADING_POOL) : stats_results_good_urls_only.json extract_loading.py
-	./extract_loading.py stats_results_good_urls_only.json >$@
+	.venv/bin/python3 ./extract_loading.py stats_results_good_urls_only.json >$@
+
+$(V8_POOL) : stats_results_good_urls_only.json extract_v8.py
+	.venv/bin/python3 ./extract_v8.py stats_results_good_urls_only.json >$@
 
 clean:
-	rm -f $(LOADING_POOL)
+	rm -f $(LOADING_POOL) $(V8_POOL)
