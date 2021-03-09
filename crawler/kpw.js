@@ -62,25 +62,23 @@ const runTestSet = async (url, policy, cliOptions) => {
         asyncCleanups.push(() => fs.rm(cliOptions.directory, { force: true, recursive: true}));
 
         let timeLeft = 0;
+        let testEndedAt;
         for (let i = 0; i < cliOptions.count; ++i) {
+            // honor inter-test waiting period
+            if (timeLeft > 0) { await crawling.asyncSleep(timeLeft); }
             try {
-                if (timeLeft > 0) {
-                    await crawling.asyncSleep(timeLeft);
-                }
                 const cycleStats = await runColdHotCycle(url, i, cliOptions);
-                const testEndedAt = Date.now();
+                testEndedAt = Date.now();
 
                 // stash our baked cycle stats in Mongo
                 console.error(`DONE: visit(url=${url}, policy=${policy}, cycle=${i})`);
                 await visitLogger.visitComplete(`t${i}`, cycleStats);
-
-
-                // compute how much longer we should wait to keep our specified inter-test spacing
-                timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
             } catch (err) {
                 console.error(`ERROR: visit(url=${url}, policy=${policy}, cycle=${i})`, err);
                 await visitLogger.visitFailed(`t${i}`, err.toString());
             }
+            // compute how much longer we should wait to keep our specified inter-test spacing
+            timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
         }
     } finally {
         await Promise.allSettled(asyncCleanups.map(thunk => thunk())).catch((err) => {
@@ -106,10 +104,16 @@ const serveKpw = async (port, cliOptions) => {
             const {
                 url,
                 policy,
+                cache,
             } = req.body;
 
             // Construct a one-shot set of "CLI" options to drive this test (prototype'd by the actual CLI options we got)
             const tmpOptions = Object.create(cliOptions);
+
+            // If a 'cache' job argument was provided, use it (must be boolean)
+            if (typeof cache === "boolean") {
+                tmpOptions.cache = cache;
+            }
 
             // Set the Chromium args and seed-profile
             const { seed, args } = POLICY_MAP[policy];

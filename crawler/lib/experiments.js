@@ -10,7 +10,7 @@ const openTabAndMeasure = async (browser, url, tabTag, cliOptions) => {
     const page = await browser.newPage();
     const pageCrashedOrClosed = crawling.pageMonitor(page);
     try {
-        await page.setCacheEnabled(false);
+        await page.setCacheEnabled(cliOptions.cache);
         const traceFilename = path.join(cliOptions.directory, `trace.${tabTag}.json`);
         await page.tracing.start({
             path: traceFilename,

@@ -3,6 +3,7 @@
 const addCommonOptions = (program) => {
     return (program
         .option('-b, --binary <path>', 'launch Chromium binary found at <path>')
+        .option('-e, --cache', 'Visit pages with caches on', false)
         .option('-c, --count <n>', 'perform <n> repetitions of the test', 1)
         .option('-n, --navTimeout <sec>', 'abort navigation after <sec>', 30)
         .option('-p, --proxy <url>', 'use <url> as an HTTP/SOCKS proxy server')
