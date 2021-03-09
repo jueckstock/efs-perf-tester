@@ -10,7 +10,7 @@ namePrefix: "efs-"
 images:
   - name: "efs-perf-crawler"
     newName: "192.168.42.206:5000/efs-perf-crawler"
-    newTag: "5a2d"
+    newTag: "f46a"
   - name: "kpw-consumer-sidecar"
     newName: "192.168.42.206:5000/kpw-consumer"
     newTag: "4065"
