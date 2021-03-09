@@ -35,7 +35,7 @@ def main(argv):
     }
 
     metrics = {
-        'invokations': ('3rd Party V8 Engine Invocations', 'count', (0, 2e5), 500),
+        'invocations': ('3rd Party V8 Engine Invocations', 'count', (0, 2e5), 500),
         'microseconds': ('3rd Party V8 Engine Execution Time', 'microseconds', (0, 5e6), 500),
     }
 
