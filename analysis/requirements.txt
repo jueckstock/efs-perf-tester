@@ -30,6 +30,7 @@ pyzmq==22.0.3
 regex==2020.11.13
 rope==0.18.0
 scipy==1.6.1
+seaborn==0.11.1
 six==1.15.0
 toml==0.10.2
 tornado==6.1

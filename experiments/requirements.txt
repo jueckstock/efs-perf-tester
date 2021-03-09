@@ -1,0 +1,2 @@
+publicsuffix2==2.20191221
+rope==0.18.0
