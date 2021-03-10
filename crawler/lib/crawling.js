@@ -72,9 +72,15 @@ const clonedSeedProfile = async (seedPath) => {
     return profile;
 };
 
-const asyncSleep = (ms) => {
+const asyncSleep = (ms, options) => {
+    const {
+        watchdog = false
+    } = options || {};
     return new Promise((resolve) => {
-        setTimeout(resolve, ms);
+        const timeOut = setTimeout(resolve, ms);
+        if (watchdog) {
+            timeOut.unref();
+        }
     });
 };
 

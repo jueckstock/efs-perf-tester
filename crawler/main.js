@@ -5,8 +5,9 @@ const path = require('path');
 const am = require('am');
 const fs = require('fs-extra');
 
-const crawling = require('./crawling');
+const crawling = require('./lib/crawling');
 const { runColdHotCycle } = require('./lib/experiments');
+const { addCommonOptions } = require('./lib/ui');
 
 
 const runTestSet = async (url, cliOptions) => {
@@ -17,26 +18,25 @@ const runTestSet = async (url, cliOptions) => {
     }
     try {
         let timeLeft = 0;
+        let testEndedAt;
         for (let i = 0; i < cliOptions.count; ++i) {
+            if (timeLeft > 0) {
+                console.log(`waiting ${timeLeft}ms before next test...`);
+                await crawling.asyncSleep(timeLeft);
+            }
             try {
-                if (timeLeft > 0) {
-                    console.log(`waiting ${timeLeft}ms before next test...`);
-                    await crawling.asyncSleep(timeLeft);
-                }
                 const cycleStats = await runColdHotCycle(url, i, cliOptions);
-                const testEndedAt = Date.now();
+                testEndedAt = Date.now();
 
                 // stash our cycle stats
                 const statsFilename = path.join(cliOptions.directory, `stats.${i}.json`);
                 await fs.writeFile(statsFilename, JSON.stringify(cycleStats));
-
-                // compute how much longer we should wait to keep our specified inter-test spacing
-                timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
             } catch (testErr) {
                 console.error(`Fatal error running test ${i + 1}/${cliOptions.count}:`, testErr);
             }
+            // compute how much longer we should wait to keep our specified inter-test spacing
+            timeLeft = (cliOptions.wait * 1000) - (Date.now() - testEndedAt);
         }
-
     } finally {
         if (xvfb) {
             await xvfb.stop();

@@ -26,7 +26,7 @@ const openTabAndMeasure = async (browser, url, tabTag, cliOptions) => {
             waitUntil: 'load',
             timeout: cliOptions.navTimeout * 1000,
         });
-        const waitingForLoaded = crawling.asyncSleep(cliOptions.timeout * 1000);
+        const waitingForLoaded = crawling.asyncSleep(cliOptions.timeout * 1000, { watchdog: true });
         await Promise.race([
             pageCrashedOrClosed,
             loadedResponse,
