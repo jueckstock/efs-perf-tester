@@ -18,11 +18,20 @@ const matchCatAny = (/** @type {String[]} */...matchCategories) => {
 }
 
 const eventProcessorRules = [{
-    matches: matchName('domContentLoadedEventEnd', 'domInteractive', 'loadEventEnd', 'firstPaint', 'firstContentfulPaint'), 
-    process: (event, stats) => {
-        const { name, ts } = event;
-        stats.loading = stats.loading || {};
-        stats.loading[name] = ts;
+    matches: matchName('domContentLoadedEventStart', 'domInteractive', 'loadEventStart', 'firstPaint', 'firstContentfulPaint'), 
+    process: (event, stats, extra) => {
+        const { 
+            args: {
+                frame,
+            },
+            name, 
+            ts,
+        } = event;
+        const frameEpoch = (extra.frameEpochMap && extra.frameEpochMap[frame]);
+        if (frameEpoch) {
+            stats.loading = stats.loading || {};
+            stats.loading[name] = ts - frameEpoch;
+        }
     }
 }, {
     matches: matchName('largestContentfulPaint::Candidate'), 
@@ -33,19 +42,51 @@ const eventProcessorRules = [{
                     isMainFrame,
                     size,
                 },
+                frame,
             },
             ts,
         } = event;
         if (isMainFrame) {
-            const sload = (stats.loading = stats.loading || {});
-            const oldSize = extra.lcpSize || 0;
-            if (size > oldSize) {
-                sload.largestContentfulPaint = ts;
-                extra.lcpSize = size;
+            const frameEpoch = (extra.frameEpochMap && extra.frameEpochMap[frame]);
+            if (frameEpoch) {
+                const sload = (stats.loading = stats.loading || {});
+                const oldSize = extra.lcpSize || 0;
+                if (size > oldSize) {
+                    sload.largestContentfulPaint = ts - frameEpoch;
+                    extra.lcpSize = size;
+                }
             }
         }
     }
 }, {
+    matches: matchName('navigationStart'),
+    process: (event, _, extra) => {
+        const {
+            args: {
+                data: {
+                    documentLoaderURL,
+                    isLoadingMainFrame,
+                },
+                frame,
+            },
+            pid,
+            ts,
+        } = event;
+
+        // ignore sub-frame loads 
+        if (isLoadingMainFrame) {
+            extra.frameEpochMap = extra.frameEpochMap || {};
+            extra.frameEpochMap[frame] = ts;
+
+            // ignore non-URLs when considering execution context origin per renderer pid
+            if  ((documentLoaderURL !== '') && (documentLoaderURL !== 'about:blank')) {
+                const navUrl = new URL(documentLoaderURL);
+                extra.pidOriginMap = extra.pidOriginMap || {};
+                extra.pidOriginMap[pid] = navUrl.origin;
+            }
+        }
+    }
+}, /*{
     matches: matchName('FrameCommittedInBrowser'),
     process: (event, _, extra) => {
         const {
@@ -56,45 +97,47 @@ const eventProcessorRules = [{
                     parent,
                     url
                 }
-            }
+            },
+            ts,
         } = event;
+
+        // stash url/frame-d/parent-frame-id in our extra state map (keyed by PID)
         const pidOriginMap = (extra.pidOriginMap = extra.pidOriginMap || {});
         pidOriginMap[pid] = {
             url: new URL(url),
             frame,
             parent,
         };
+
+        // detect the root frame (no parent) navigation commit; we will use this as the epoch for all loading times
+        if (typeof parent === 'undefined') {
+            if (typeof extra.loadingEpoch !== 'undefined') {
+                throw new Error(`duplicate loading epoch ${ts} (previous was ${extra.loadingEpoch})`);
+            }
+            extra.loadingEpoch = ts;
+        }
     }
-}, {
+},*/ {
     matches: matchCatAny('v8', 'disabled-by-default-v8.runtime_stats'),
     process: (event, stats, extra) => {
         if (('args' in event) && ('runtime-call-stats' in event.args)) {
-            const pidOriginMap = (extra.pidOriginMap = extra.pidOriginMap || {});
-            const executionContext = pidOriginMap[event.pid];
-            if (!executionContext) {
+            const executionOrigin = extra.pidOriginMap && extra.pidOriginMap[event.pid];
+            if (!executionOrigin) {
                 console.warn(`STATS[v8]: unable to lookup execution context origin for pid=${event.pid}?!`);
                 return;
             }
-            const executionOrigin = executionContext.url.origin;
 
             const v8Stats = (stats.v8 = stats.v8 || {});
             const v8OriginStats = (v8Stats[executionOrigin] = v8Stats[executionOrigin] || {
-                //total: {
-                    count: 0,
-                    microseconds: 0,
-                //},
-                //slice: {},
+                count: 0,
+                microseconds: 0,
             });
-            const grandTotal = v8OriginStats; //.total;
             const rcs = event.args['runtime-call-stats'];
             for (const key in rcs) {
                 if (rcs.hasOwnProperty(key)) {
                     const [ eventCount, eventMicroseconds ] = rcs[key];
-                    /*const rcsSlice = v8OriginStats.slice[key] || (v8OriginStats.slice[key] = { count: 0, microseconds: 0});
-                    rcsSlice.count += eventCount;
-                    rcsSlice.microseconds += eventMicroseconds;*/
-                    grandTotal.count += eventCount;
-                    grandTotal.microseconds += eventMicroseconds;
+                    v8OriginStats.count += eventCount;
+                    v8OriginStats.microseconds += eventMicroseconds;
                 }
             }
         }
@@ -146,28 +189,22 @@ const eventProcessorRules = [{
 const extractTraceStats = (buffer) => {
     const events = JSON.parse(buffer).traceEvents;
     
-    // sort by timestamp and find epoch (earliest non-0 timestamp; LINUX_CLOCK_MONOTONIC--microsecond ticks from boot time)
+    // sort by timestamp
     events.sort((a, b) => a.ts - b.ts);
-    let epoch;
-    for (const event of events) {
-        if (event.ts !== 0) {
-            epoch = event.ts;
-            break;
-        }
-    }
 
-    //console.log(`EXTRACT: processing ${events.length} event records...`);
+    // process the event slices to identify the records of interest and extract the essential state/stats
     const stats = Object.create(null);
     const extra = Object.create(null);
     for (const event of events) {
         event.cat = event.cat.split(','); // parse category tokens into an array for filtering/matching
-        event.ts -= epoch; // adjust timestamps to be trace-relative (not boot/system-relative)
         for (const { matches, process } of eventProcessorRules) {
             if (matches(event)) {
                 process(event, stats, extra);
             }
         }
     }
+
+    // 
     
     return stats;
 }
