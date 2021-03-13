@@ -65,7 +65,6 @@ const eventProcessorRules = [{
             args: {
                 data: {
                     documentLoaderURL,
-                    isLoadingMainFrame,
                 },
                 frame,
             },
@@ -73,17 +72,14 @@ const eventProcessorRules = [{
             ts,
         } = event;
 
-        // ignore sub-frame loads 
-        if (isLoadingMainFrame) {
-            extra.frameEpochMap = extra.frameEpochMap || {};
-            extra.frameEpochMap[frame] = ts;
+        extra.frameEpochMap = extra.frameEpochMap || {};
+        extra.frameEpochMap[frame] = ts;
 
-            // ignore non-URLs when considering execution context origin per renderer pid
-            if  ((documentLoaderURL !== '') && (documentLoaderURL !== 'about:blank')) {
-                const navUrl = new URL(documentLoaderURL);
-                extra.pidOriginMap = extra.pidOriginMap || {};
-                extra.pidOriginMap[pid] = navUrl.origin;
-            }
+        // ignore non-URLs when considering execution context origin per renderer pid
+        if  ((documentLoaderURL !== '') && (documentLoaderURL !== 'about:blank')) {
+            const navUrl = new URL(documentLoaderURL);
+            extra.pidOriginMap = extra.pidOriginMap || {};
+            extra.pidOriginMap[pid] = navUrl.origin;
         }
     }
 }, /*{

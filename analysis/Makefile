@@ -1,10 +1,10 @@
 LOADING_PDFS = \
-	loading-domContentLoadedEventEnd.pdf \
+	loading-domContentLoadedEventStart.pdf \
 	loading-firstContentfulPaint.pdf \
 	loading-largestContentfulPaint.pdf \
 	loading-domInteractive.pdf \
 	loading-firstPaint.pdf \
-	loading-loadEventEnd.pdf
+	loading-loadEventStart.pdf
 
 V8_PDFS = \
 	v8-invocations.pdf \
