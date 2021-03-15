@@ -35,15 +35,15 @@ def main(argv):
     }
 
     metrics = {
-        'invocations': ('3rd Party V8 Engine Invocations', 'count', (0, 2e5), 500),
-        'microseconds': ('3rd Party V8 Engine Execution Time', 'microseconds', (0, 5e6), 500),
+        'invocations': ('3rd Party V8 Engine Invocations', 'count', (0, 2e5), 50),
+        'microseconds': ('3rd Party V8 Engine Execution Time', 'microseconds', (0, 2e6), 50),
     }
 
     df = pd.read_csv(v8_csv_file)
 
     for metric, (title_text, xlabel_text, plot_xlims, marker_stride) in metrics.items():
         ax = None
-        series_map = {series: sdata.reset_index()[metric] for series, sdata in df.groupby(['policy', 'temp'])}
+        series_map = {series: sdata.groupby('tpetld1')[metric].median() for series, sdata in df.groupby(['policy', 'temp'])}
         for policy, (ptext, pcolor, pmarker) in policy_styles.items():
             for temp, (ttext, tls) in temp_line_styles.items():
                 ax = sns.ecdfplot(series_map[(policy, temp)], label=f"{ptext} ({ttext})", color=pcolor, marker=pmarker, ls=tls, markevery=marker_stride, ax=ax, alpha=0.5)
