@@ -27,10 +27,10 @@ const eventProcessorRules = [{
             name, 
             ts,
         } = event;
-        const frameEpoch = (extra.frameEpochMap && extra.frameEpochMap[frame]);
-        if (frameEpoch) {
+        
+        if (frame === extra.navEpochFrame) {
             stats.loading = stats.loading || {};
-            stats.loading[name] = ts - frameEpoch;
+            stats.loading[name] = ts - extra.navEpochTs;
         }
     }
 }, {
@@ -47,12 +47,12 @@ const eventProcessorRules = [{
             ts,
         } = event;
         if (isMainFrame) {
-            const frameEpoch = (extra.frameEpochMap && extra.frameEpochMap[frame]);
-            if (frameEpoch) {
+            // frame-id check should be redundant/automatic condition...
+            if (frame === extra.navEpochFrame) {
                 const sload = (stats.loading = stats.loading || {});
                 const oldSize = extra.lcpSize || 0;
                 if (size > oldSize) {
-                    sload.largestContentfulPaint = ts - frameEpoch;
+                    sload.largestContentfulPaint = ts - extra.navEpochTs;
                     extra.lcpSize = size;
                 }
             }
@@ -65,6 +65,7 @@ const eventProcessorRules = [{
             args: {
                 data: {
                     documentLoaderURL,
+                    isLoadingMainFrame,
                 },
                 frame,
             },
@@ -72,8 +73,11 @@ const eventProcessorRules = [{
             ts,
         } = event;
 
-        extra.frameEpochMap = extra.frameEpochMap || {};
-        extra.frameEpochMap[frame] = ts;
+        if (isLoadingMainFrame) {
+            // mark nav-start only for the main frame (and remember its frame ID)
+            extra.navEpochTs = ts;
+            extra.navEpochFrame = frame;
+        }
 
         // ignore non-URLs when considering execution context origin per renderer pid
         if  ((documentLoaderURL !== '') && (documentLoaderURL !== 'about:blank')) {
