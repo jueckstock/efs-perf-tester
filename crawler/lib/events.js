@@ -73,51 +73,22 @@ const eventProcessorRules = [{
             ts,
         } = event;
 
-        if (isLoadingMainFrame) {
-            // mark nav-start only for the main frame (and remember its frame ID)
-            extra.navEpochTs = ts;
-            extra.navEpochFrame = frame;
-        }
-
-        // ignore non-URLs when considering execution context origin per renderer pid
+        // ignore non-URLs (don't change anything for pid/SOP mappings, and are spurious [for our purposes] for main-frame navs)
         if  ((documentLoaderURL !== '') && (documentLoaderURL !== 'about:blank')) {
+            // mark nav-start only for the main frame (and remember its frame ID)
+            if (isLoadingMainFrame) {
+                extra.navEpochTs = ts;
+                extra.navEpochFrame = frame;
+                console.log(`EVENTS: navigationStart(frame=${frame}, pid=${pid}, ts=${ts}, url=${documentLoaderURL})`);
+            }
+
+            // mark execution context for all non-null navigtations, by pid context
             const navUrl = new URL(documentLoaderURL);
             extra.pidOriginMap = extra.pidOriginMap || {};
             extra.pidOriginMap[pid] = navUrl.origin;
         }
     }
-}, /*{
-    matches: matchName('FrameCommittedInBrowser'),
-    process: (event, _, extra) => {
-        const {
-            args: {
-                data: {
-                    processId: pid,
-                    frame,
-                    parent,
-                    url
-                }
-            },
-            ts,
-        } = event;
-
-        // stash url/frame-d/parent-frame-id in our extra state map (keyed by PID)
-        const pidOriginMap = (extra.pidOriginMap = extra.pidOriginMap || {});
-        pidOriginMap[pid] = {
-            url: new URL(url),
-            frame,
-            parent,
-        };
-
-        // detect the root frame (no parent) navigation commit; we will use this as the epoch for all loading times
-        if (typeof parent === 'undefined') {
-            if (typeof extra.loadingEpoch !== 'undefined') {
-                throw new Error(`duplicate loading epoch ${ts} (previous was ${extra.loadingEpoch})`);
-            }
-            extra.loadingEpoch = ts;
-        }
-    }
-},*/ {
+}, {
     matches: matchCatAny('v8', 'disabled-by-default-v8.runtime_stats'),
     process: (event, stats, extra) => {
         if (('args' in event) && ('runtime-call-stats' in event.args)) {
