@@ -44,15 +44,18 @@ def main(argv):
     for metric, (title_text, xlabel_text, plot_xlims, marker_stride) in metrics.items():
         ax = None
         series_map = {series: sdata.reset_index()[metric] for series, sdata in df.groupby(['policy', 'temp'])}
+        max_x = 0.0
         for policy, (ptext, pcolor, pmarker) in policy_styles.items():
             for temp, (ttext, tls) in temp_line_styles.items():
-                ax = sns.ecdfplot(series_map[(policy, temp)], label=f"{ptext} ({ttext})", color=pcolor, marker=pmarker, ls=tls, markevery=marker_stride, ax=ax, alpha=0.5)
+                series = series_map[(policy, temp)]
+                ax = sns.ecdfplot(series, label=f"{ptext} ({ttext})", color=pcolor, marker=pmarker, ls=tls, markevery=marker_stride, ax=ax, alpha=0.5)
+                max_x = max(max_x, series.quantile(0.95))
         
         ax.legend()
         ax.set_xlabel(xlabel_text)
         ax.set_ylabel("3rd Party eTLD+1 Origins CDF")
         ax.set_title(title_text)
-        ax.set_xlim(plot_xlims)
+        ax.set_xlim((0, max_x))
         fig = ax.get_figure()
         fig.tight_layout()
         fig.savefig(f"{out_prefix}{metric}.pdf")

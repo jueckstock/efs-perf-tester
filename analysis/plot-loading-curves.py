@@ -39,15 +39,18 @@ def main(argv):
     for metric, mdata in df.groupby('metric'):
         ax = None
         series_map = {series: sdata.seconds for series, sdata in mdata.groupby(['policy', 'temp'])}
+        max_x = 0.0
         for policy, (ptext, pcolor, pmarker) in policy_styles.items():
             for temp, (ttext, tls) in temp_line_styles.items():
-                ax = sns.ecdfplot(series_map[(policy, temp)], label=f"{ptext} ({ttext})", color=pcolor, marker=pmarker, ls=tls, markevery=1000, alpha=0.5, ax=ax)
+                series = series_map[(policy, temp)]
+                ax = sns.ecdfplot(series, label=f"{ptext} ({ttext})", color=pcolor, marker=pmarker, ls=tls, markevery=500, alpha=0.5, ax=ax)
+                max_x = max(max_x, series.quantile(0.95))
         
         ax.legend()
         ax.set_xlabel(f"seconds until {metric}")
         ax.set_ylabel("CDF")
         ax.set_title(metric)
-        ax.set_xlim((0, 15))
+        ax.set_xlim((0, max_x))
         fig = ax.get_figure()
         fig.tight_layout()
         fig.savefig(f"{out_prefix}{metric}.pdf")
