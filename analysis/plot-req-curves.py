@@ -53,7 +53,7 @@ def main(argv):
         
         ax.legend()
         ax.set_xlabel(xlabel_text)
-        ax.set_ylabel("3rd Party eTLD+1 Origins CDF")
+        ax.set_ylabel("3rd party domains (CDF)")
         ax.set_title(title_text)
         ax.set_xlim((0, max_x))
         fig = ax.get_figure()

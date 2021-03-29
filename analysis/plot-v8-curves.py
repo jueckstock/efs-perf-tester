@@ -36,7 +36,7 @@ def main(argv):
 
     metrics = {
         'invocations': ('3rd Party V8 Engine Invocations', 'count', (0, 2e5), 50),
-        'microseconds': ('3rd Party V8 Engine Execution Time', 'microseconds', (0, 2e6), 50),
+        'microseconds': ('3rd Party V8 Engine Execution Time', 'CPU microseconds', (0, 2e6), 25),
     }
 
     df = pd.read_csv(v8_csv_file)
@@ -53,7 +53,7 @@ def main(argv):
         
         ax.legend()
         ax.set_xlabel(xlabel_text)
-        ax.set_ylabel("3rd Party eTLD+1 Execution Context CDF")
+        ax.set_ylabel("3rd party execution contexts (CDF)")
         #ax.set_title(title_text)
         ax.set_xlim((0, max_x))
         fig = ax.get_figure()

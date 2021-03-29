@@ -48,8 +48,8 @@ def main(argv):
         
         ax.legend()
         ax.set_xlabel(f"seconds until {metric}")
-        ax.set_ylabel("CDF")
-        ax.set_title(metric)
+        ax.set_ylabel("pages visited (CDF)")
+        #ax.set_title(metric)
         ax.set_xlim((0, max_x))
         fig = ax.get_figure()
         fig.tight_layout()
